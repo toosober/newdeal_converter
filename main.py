@@ -105,8 +105,8 @@ class Parser:
     document: Document = field(default_factory=Document)
     _years: List[str] = None
     _state: StateProcessor = look_for_year_string
-    _current_way = None
-    _years_len = None
+    _current_way: Way = None
+    _years_len: int = None
 
     CODE = 'коды'
     RESOURCES = 'Ресурсы'
