@@ -1,7 +1,16 @@
+import json
 import sys
 from collections import namedtuple, UserList
 
 import xlrd
+
+
+class WayEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, Way):
+            return [record._asdict() for record in o]
+        else:
+            return json.JSONEncoder.default(self, o)
 
 
 class Way(UserList):
@@ -10,11 +19,31 @@ class Way(UserList):
         self.name = name
 
 
+class AccountEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, Account):
+            return {
+                "type": o.type,
+                "uses": o.uses,
+                "resources": o.resources
+            }
+        else:
+            return json.JSONEncoder.default(self, o)
+
+
 class Account:
     def __init__(self, type_):
-        self._type = type_
+        self.type = type_
         self.resources = Way(name=Parser.RESOURCES)
         self.uses = Way(name=Parser.USES)
+
+    def __repr__(self):
+        # return json.dumps(self, cls=AccountEncoder)
+        return '{' \
+                f'"type":{json.dumps(self.type, ensure_ascii=False)},\n' \
+                f'"uses":{json.dumps(self.uses, ensure_ascii=False, cls=WayEncoder)},\n' \
+                f'"resources":{json.dumps(self.resources, ensure_ascii=False, cls=WayEncoder)}\n' \
+                '}'
 
 
 Record = namedtuple('Record', 'name code values children')
@@ -55,7 +84,6 @@ class Parser:
             self._state = Parser.look_for_way_type
 
     def look_for_way_type(self, row):
-        account = self._accounts[-1]
         title_cell: xlrd.sheet.Cell = row[Parser.TITLE_COLUMN]
         if self._current_way.name == title_cell.value:
             self._state = Parser.look_for_account_record
@@ -64,10 +92,13 @@ class Parser:
         account = self._accounts[-1]
         name = row[0].value
         code = row[1].value
-        values = row[2:2+self._years_len]
-        new_record = Record(name, code, values, [])
-        if not values[0].value:  # пустые значения, не интересная строка
+        values = {year: cell.value for cell, year in zip(row[2:], self._years)}
+        new_record = Record(name, code, values, children=[])
+        if not any(values.values()):  # нет значений, неинтересная строка
             return
+
+        # вложенная запись может быть либо с расширяемым кодом, например D.3 -> D.39
+        # либо начинаться с "в том числе" проверим сначала одно, потом второе
         try:
             prefix = code[:-1]
             assert len(prefix) > 0
@@ -95,7 +126,6 @@ def main(path_):
     for row in sheet.get_rows():
         parser.process(row)
     print(parser._accounts)
-    print(parser._years)
 
 
 if __name__ == "__main__":
