@@ -1,52 +1,30 @@
-import json
 import sys
-from collections import namedtuple, UserList
-
+import json
+import dataclass_factory
+from typing import List, Tuple
+from dataclasses import dataclass, field
 import xlrd
 
 
-class WayEncoder(json.JSONEncoder):
-    def default(self, o):
-        if isinstance(o, Way):
-            return [record._asdict() for record in o]
-        else:
-            return json.JSONEncoder.default(self, o)
+@dataclass
+class Record:
+    name: str
+    code: str
+    values: List[Tuple[str, float]] = field(default_factory=list)
+    children: List['Record'] = field(default_factory=list)
 
 
-class Way(UserList):
-    def __init__(self, *args, name):
-        super().__init__(*args)
-        self.name = name
+@dataclass
+class Way:
+    name: str
+    records: List[Record] = field(default_factory=list)
 
 
-class AccountEncoder(json.JSONEncoder):
-    def default(self, o):
-        if isinstance(o, Account):
-            return {
-                "type": o.type,
-                "uses": o.uses,
-                "resources": o.resources
-            }
-        else:
-            return json.JSONEncoder.default(self, o)
-
-
+@dataclass
 class Account:
-    def __init__(self, type_):
-        self.type = type_
-        self.resources = Way(name=Parser.RESOURCES)
-        self.uses = Way(name=Parser.USES)
-
-    def __repr__(self):
-        # return json.dumps(self, cls=AccountEncoder)
-        return '{' \
-                f'"type":{json.dumps(self.type, ensure_ascii=False)},\n' \
-                f'"uses":{json.dumps(self.uses, ensure_ascii=False, cls=WayEncoder)},\n' \
-                f'"resources":{json.dumps(self.resources, ensure_ascii=False, cls=WayEncoder)}\n' \
-                '}'
-
-
-Record = namedtuple('Record', 'name code values children')
+    type: str
+    resources: Way = field(default_factory=lambda: Way(Parser.RESOURCES))
+    uses: Way = field(default_factory=lambda: Way(Parser.USES))
 
 
 class Parser:
@@ -93,19 +71,20 @@ class Parser:
         name = row[0].value
         code = row[1].value
         values = {year: cell.value for cell, year in zip(row[2:], self._years)}
-        new_record = Record(name, code, values, children=[])
         if not any(values.values()):  # нет значений, неинтересная строка
             return
+
+        new_record = Record(name, code, values)
 
         # вложенная запись может быть либо с расширяемым кодом, например D.3 -> D.39
         # либо начинаться с "в том числе" проверим сначала одно, потом второе
         try:
             prefix = code[:-1]
             assert len(prefix) > 0
-            record = [record for record in self._current_way if record.code == prefix].pop()
+            record = [record for record in self._current_way.records if record.code == prefix].pop()
             record.children.append(new_record)
         except:
-            self._current_way.append(new_record)
+            self._current_way.records.append(new_record)
 
         if name == Parser.TOTAL:
             if self._current_way.name == Parser.USES:
@@ -125,7 +104,8 @@ def main(path_):
     parser = Parser()
     for row in sheet.get_rows():
         parser.process(row)
-    print(parser._accounts)
+    factory = dataclass_factory.Factory()
+    print(json.dumps(factory.dump(parser._accounts), ensure_ascii=False))
 
 
 if __name__ == "__main__":
