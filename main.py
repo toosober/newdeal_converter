@@ -66,7 +66,7 @@ def look_for_account_record(parser, row):
     name: str = row[0].value
     code = row[1].value
     raw_values = (cell.value for cell in row[2:])
-    values = [(year, value) for year, value in zip(parser._years, raw_values)]
+    values = [(year, float(value)) for year, value in zip(parser._years, raw_values) if value]
     if not any(value[1] for value in values):  # нет значений, неинтересная строка
         return
 
@@ -120,15 +120,18 @@ class Parser:
         if new_state:
             self._state = new_state
 
+    def parse_document(self, filepath: str):
+        workbook = xlrd.open_workbook(filepath, formatting_info=True)
+        sheet = workbook.sheet_by_index(0)
+        for row in sheet.get_rows():
+            self.process(row)
+        return self.document
+
 
 def main(path_):
-    workbook = xlrd.open_workbook(path_, formatting_info=True)
-    sheet = workbook.sheet_by_index(0)
-    parser = Parser()
-    for row in sheet.get_rows():
-        parser.process(row)
+    document = Parser().parse_document(path_)
     factory = dataclass_factory.Factory()
-    dct = factory.dump(parser.document)
+    dct = factory.dump(document)
     print(json.dumps(dct, ensure_ascii=False))
 
 
